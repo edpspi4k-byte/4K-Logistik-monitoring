@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sistem Pencatatan Logistik</title>
 <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
 <body class="bg-gray-100 min-h-screen flex items-start sm:items-center justify-center p-3">
 
@@ -85,22 +84,32 @@
 </div>
 
 <!-- SCANNER -->
+<div id="reader" class="hidden"></div>
 <div id="scanOverlay" class="hidden fixed inset-0 bg-black z-50 flex flex-col">
   <div class="flex justify-between items-center p-3 text-white">
-    <span class="font-semibold">Arahkan ke barcode</span>
+    <span class="font-semibold">Scan Barcode / QR</span>
     <div class="flex gap-2">
       <button id="torchBtn" onclick="toggleTorch()" class="hidden bg-white/20 px-3 py-1 rounded">🔦</button>
       <button onclick="closeScanner()" class="bg-red-600 px-3 py-1 rounded">Tutup</button>
     </div>
   </div>
-  <div class="flex-1 flex items-center justify-center overflow-hidden"><div id="reader" class="w-full"></div></div>
+  <div class="flex-1 flex items-center justify-center overflow-hidden">
+    <div class="relative w-full">
+      <video id="cam" playsinline muted class="w-full block"></video>
+      <div class="absolute inset-x-[5%] inset-y-[20%] border-2 border-green-400 rounded pointer-events-none"></div>
+    </div>
+  </div>
+  <div class="p-4 space-y-2">
+    <p id="scanHint" class="text-center text-gray-300 text-xs"></p>
+    <button id="scanBtn" onclick="tryScan(false)" class="w-full bg-green-600 text-white p-3 rounded-lg font-semibold">Scan</button>
+  </div>
 </div>
 
 <div id="toast" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg text-white text-sm shadow-lg z-[60]"></div>
 
 <script>
 // ====== GANTI dengan URL Web App Apps Script Anda (yang berakhiran /exec) ======
-const API_URL = 'https://script.google.com/macros/s/AKfycbyNgFM7ygCMubFe2BncBr6ZKZTNqAZCWpgoxlhRXel2HUppTPvRPgtMxlsJHapoKZbGtg/exec';
+const API_URL = 'GANTI_DENGAN_URL_EXEC';
 
 // Pengganti google.script.run supaya bisa jalan dari GitHub Pages
 const google = { script: { get run() { return makeRunner(); } } };
@@ -118,7 +127,7 @@ function makeRunner(ok = () => {}, fail = () => {}) {
 }
 
 const $ = id => document.getElementById(id);
-let U = "", P = "", role = "", scanner = null, scanning = false, torchOn = false, count = 0;
+let U = "", P = "", role = "", count = 0;
 const run = () => google.script.run.withFailureHandler(err => toast(err.message || err, false));
 
 function toast(msg, ok = true) {
@@ -205,41 +214,103 @@ function loadMaster() {
   }).getMasterData(U, P);
 }
 
-/* scanner kamera */
-async function openScanner() {
-  if (scanning) return;
-  $('scanOverlay').classList.remove('hidden');
-  scanner = new Html5Qrcode('reader', { verbose: false, useBarCodeDetectorIfSupported: true });
+/* scanner kamera: otomatis (BarcodeDetector bawaan browser) atau tekan tombol Scan */
+const NATIVE = 'BarcodeDetector' in window;
+let detector = null, stream = null, loopTimer = null, busy = false, torchOn = false;
+const cv = document.createElement('canvas'), ctx = cv.getContext('2d', { willReadFrequently: true });
+
+function loadLib() {
+  return window.Html5Qrcode ? Promise.resolve() : new Promise((ok, no) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js';
+    s.onload = ok; s.onerror = () => no(new Error('Gagal memuat pemindai.'));
+    document.head.appendChild(s);
+  });
+}
+async function getDetector() {
+  if (!NATIVE) return null;
+  if (detector) return detector;
   try {
-    await scanner.start({ facingMode: 'environment' },
-      { fps: 15, aspectRatio: 1.333, qrbox: (w, h) => ({ width: Math.floor(w * 0.85), height: Math.floor(Math.min(h * 0.45, w * 0.45)) }) },
-      onScanned, () => {});
-    scanning = true;
-    const c = scanner.getRunningTrackCameraCapabilities();
-    if (c && c.torchFeature && c.torchFeature().isSupported()) $('torchBtn').classList.remove('hidden');
+    const want = ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf', 'codabar', 'data_matrix'];
+    const sup = await BarcodeDetector.getSupportedFormats();
+    detector = new BarcodeDetector({ formats: want.filter(f => sup.includes(f)) });
+  } catch (e) { detector = null; }
+  return detector;
+}
+async function decodeCanvas(c) {
+  const d = await getDetector();
+  if (d) { const r = await d.detect(c); return r.length ? r[0].rawValue : null; }
+  await loadLib();
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9));
+  const h = new Html5Qrcode('reader', { verbose: false });
+  try { return await h.scanFile(new File([blob], 'f.jpg', { type: 'image/jpeg' }), false); }
+  catch (e) { return null; }
+  finally { try { h.clear(); } catch (e) {} }
+}
+function grab() {                       // potong area tengah + kecilkan agar ringan
+  const v = $('cam'), vw = v.videoWidth, vh = v.videoHeight;
+  if (!vw) return null;
+  const cw = vw * 0.9, ch = vh * 0.6, scale = Math.min(1, 800 / cw);
+  cv.width = Math.round(cw * scale); cv.height = Math.round(ch * scale);
+  ctx.drawImage(v, (vw - cw) / 2, (vh - ch) / 2, cw, ch, 0, 0, cv.width, cv.height);
+  return cv;
+}
+
+async function openScanner() {
+  if (stream) return;
+  $('scanOverlay').classList.remove('hidden');
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    const v = $('cam'); v.srcObject = stream; await v.play();
   } catch (err) {
     closeScanner();
-    toast(/Permission|NotAllowed/i.test(String(err)) ? 'Izin kamera ditolak. Aktifkan izin kamera di browser.' : 'Kamera tidak bisa dibuka. Pakai "Scan dari foto" atau ketik manual.', false);
+    return toast(/Permission|NotAllowed/i.test(String(err)) ? 'Izin kamera ditolak. Aktifkan izin kamera di browser.' : 'Kamera tidak bisa dibuka. Pakai "Scan dari foto" atau ketik manual.', false);
   }
+  const tr = stream.getVideoTracks()[0], caps = tr.getCapabilities ? tr.getCapabilities() : {};
+  if (caps.torch) $('torchBtn').classList.remove('hidden');
+  tr.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
+  if (await getDetector()) { $('scanHint').textContent = 'Otomatis: arahkan ke barcode/QR di dalam kotak hijau.'; loop(); }
+  else $('scanHint').textContent = 'Arahkan barcode/QR ke kotak hijau, lalu tekan Scan.';
+}
+function loop() {                        // ±5x per detik, ringan
+  clearTimeout(loopTimer);
+  loopTimer = setTimeout(async () => { if (!stream) return; await tryScan(true); loop(); }, 200);
+}
+async function tryScan(silent) {
+  if (busy || !stream) return;
+  busy = true; $('scanBtn').disabled = true;
+  try {
+    const c = grab();
+    const text = c && await decodeCanvas(c);
+    if (text) onScanned(text);
+    else if (!silent) toast('Belum terbaca, dekatkan & pastikan terang, lalu coba lagi.', false);
+  } catch (e) { if (!silent) toast(e.message || 'Gagal membaca.', false); }
+  finally { busy = false; $('scanBtn').disabled = false; }
 }
 function onScanned(text) {
-  if (!scanning) return;
   beep(); $('barcode').value = text.trim(); closeScanner();
   if ($('autoSave').checked && $('logForm').checkValidity()) $('logForm').requestSubmit();
 }
-async function closeScanner() {
-  scanning = false; torchOn = false; $('torchBtn').classList.add('hidden'); $('scanOverlay').classList.add('hidden');
-  if (scanner) { try { await scanner.stop(); scanner.clear(); } catch (e) {} scanner = null; }
+function closeScanner() {
+  clearTimeout(loopTimer);
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  $('cam').srcObject = null; torchOn = false;
+  $('torchBtn').classList.add('hidden'); $('scanOverlay').classList.add('hidden');
 }
-function toggleTorch() { const t = scanner && scanner.getRunningTrackCameraCapabilities().torchFeature(); if (t) { torchOn = !torchOn; t.apply(torchOn); } }
-$('fileScan').addEventListener('change', async e => {
-  const f = e.target.files[0]; if (!f) return;
+async function toggleTorch() {
+  try { torchOn = !torchOn; await stream.getVideoTracks()[0].applyConstraints({ advanced: [{ torch: torchOn }] }); }
+  catch (e) { torchOn = false; }
+}
+$('fileScan').addEventListener('change', async e => {     // cadangan: scan dari foto
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
   try {
-    const text = await new Html5Qrcode('reader', { verbose: false, useBarCodeDetectorIfSupported: true }).scanFile(f, false);
-    beep(); $('barcode').value = text.trim();
-    if ($('autoSave').checked && $('logForm').checkValidity()) $('logForm').requestSubmit();
-  } catch (err) { toast('Barcode tidak terbaca, coba foto lebih dekat/terang.', false); }
-  e.target.value = '';
+    const bmp = await createImageBitmap(f), s = Math.min(1, 1280 / Math.max(bmp.width, bmp.height));
+    cv.width = Math.round(bmp.width * s); cv.height = Math.round(bmp.height * s);
+    ctx.drawImage(bmp, 0, 0, cv.width, cv.height);
+    const t = await decodeCanvas(cv);
+    t ? onScanned(t) : toast('Barcode tidak terbaca, coba foto lebih dekat/terang.', false);
+  } catch (err) { toast('Gagal membaca foto.', false); }
 });
 
 /* simpan */
