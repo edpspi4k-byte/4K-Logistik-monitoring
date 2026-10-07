@@ -11,6 +11,7 @@
 <!-- LOGIN -->
 <div id="loginSection" class="bg-white p-6 rounded-2xl shadow-lg w-full max-w-md mt-10 sm:mt-0 space-y-3">
   <h2 class="text-2xl font-bold text-gray-800 text-center">Login Petugas</h2>
+  <p id="srv" class="text-xs text-center text-gray-400">Memeriksa server...</p>
   <input id="username" autocapitalize="none" placeholder="Username" class="w-full p-3 border rounded-lg">
   <input id="password" type="password" placeholder="Password" class="w-full p-3 border rounded-lg">
   <p id="loginMsg" class="text-sm text-red-600"></p>
@@ -119,21 +120,31 @@ function makeRunner(ok = () => {}, fail = () => {}) {
     if (name === 'withFailureHandler') return f => makeRunner(ok, f);
     return (...args) => {
       fetch(API_URL, { method: 'POST', body: JSON.stringify({ fn: name, args }) })   // text/plain: tanpa preflight CORS
-        .then(r => r.json())
+        .then(r => r.text())
+        .then(t => { try { return JSON.parse(t); } catch (e) { throw new Error('SERVER: balasan bukan data. Pastikan deployment: Execute as Me, akses Anyone, URL /exec benar, dan sudah New version.'); } })
         .then(d => d.error ? fail(new Error(d.error)) : ok(d.data))
-        .catch(e => fail(new Error('Gagal terhubung ke server: ' + e.message)));
+        .catch(e => fail(new Error(e.message.startsWith('SERVER') ? e.message.slice(8) : 'Gagal terhubung ke server: ' + e.message)));
     };
   } });
 }
 
+// Status server di halaman login
+(function () {
+  const el = document.getElementById('srv');
+  const set = (t, c) => { el.textContent = t; el.className = 'text-xs text-center ' + c; };
+  if (API_URL.indexOf('script.google.com') < 0) return set('⚠ API_URL di index.html belum diisi URL /exec', 'text-red-600');
+  fetch(API_URL).then(r => r.text()).then(t => { JSON.parse(t); set('● Server terhubung', 'text-green-600'); })
+    .catch(() => set('⚠ Server tidak terhubung. Cek URL /exec dan deployment (akses: Anyone).', 'text-red-600'));
+})();
+
 const $ = id => document.getElementById(id);
 let U = "", P = "", role = "", count = 0;
-const run = () => google.script.run.withFailureHandler(err => toast(err.message || err, false));
+const run = () => google.script.run.withFailureHandler(err => toast(err.message || err, false, 9000));
 
-function toast(msg, ok = true) {
+function toast(msg, ok = true, ms = 2500) {
   const t = $('toast'); t.textContent = msg;
   t.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg text-white text-sm shadow-lg z-[60] ' + (ok ? 'bg-green-600' : 'bg-red-600');
-  clearTimeout(t._t); t._t = setTimeout(() => t.classList.add('hidden'), 2500);
+  clearTimeout(t._t); t._t = setTimeout(() => t.classList.add('hidden'), ms);
 }
 function beep() {
   try { const c = new (window.AudioContext || window.webkitAudioContext)(), o = c.createOscillator();
@@ -209,6 +220,7 @@ function tambahUserBaru() {
 function fill(id, items, saved) { const s = $(id); items.forEach(v => s.add(new Option(v, v))); if (saved && items.includes(saved)) s.value = saved; }
 function loadMaster() {
   run().withSuccessHandler(d => {
+    if (d.info) toast(d.info, false, 9000);
     fill('kurir', d.kurir, load('kurir')); fill('jenisKendaraan', d.kendaraan, load('jenis'));
     $('shift').value = load('shift'); $('plat').value = load('plat'); $('barcode').focus();
   }).getMasterData(U, P);
