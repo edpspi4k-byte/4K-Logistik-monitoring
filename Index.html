@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sistem Pencatatan Logistik</title>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-start sm:items-center justify-center p-3">
+
+<!-- LOGIN -->
+<div id="loginSection" class="bg-white p-6 rounded-2xl shadow-lg w-full max-w-md mt-10 sm:mt-0 space-y-3">
+  <h2 class="text-2xl font-bold text-gray-800 text-center">Login Petugas</h2>
+  <input id="username" autocapitalize="none" placeholder="Username" class="w-full p-3 border rounded-lg">
+  <input id="password" type="password" placeholder="Password" class="w-full p-3 border rounded-lg">
+  <p id="loginMsg" class="text-sm text-red-600"></p>
+  <button id="loginBtn" onclick="handleLogin()" class="w-full bg-blue-600 text-white p-3 rounded-lg font-semibold disabled:opacity-60">Masuk</button>
+  <button onclick="showRegister(true)" class="w-full text-sm text-blue-600 underline">Belum punya akun? Ajukan pendaftaran</button>
+</div>
+
+<!-- PENDAFTARAN -->
+<div id="registerSection" class="hidden bg-white p-6 rounded-2xl shadow-lg w-full max-w-md mt-10 sm:mt-0 space-y-3">
+  <h2 class="text-xl font-bold text-gray-800 text-center">Permintaan Pendaftaran User</h2>
+  <input id="regNik" inputmode="numeric" maxlength="16" placeholder="NIK (16 digit)" class="w-full p-3 border rounded-lg">
+  <input id="regNama" placeholder="Nama lengkap" class="w-full p-3 border rounded-lg">
+  <textarea id="regKet" rows="3" placeholder="Keterangan (bagian/keperluan)" class="w-full p-3 border rounded-lg"></textarea>
+  <p id="regMsg" class="text-sm"></p>
+  <button id="regBtn" onclick="kirimPermintaan()" class="w-full bg-blue-600 text-white p-3 rounded-lg font-semibold disabled:opacity-60">Kirim Permintaan</button>
+  <button onclick="showRegister(false)" class="w-full text-sm text-gray-600 underline">Kembali ke login</button>
+</div>
+
+<!-- APLIKASI -->
+<div id="appSection" class="hidden bg-white p-5 rounded-2xl shadow-lg w-full max-w-lg">
+  <div class="flex justify-between items-center mb-4 border-b pb-2">
+    <h2 class="text-lg font-bold text-gray-800">Input Logistik</h2>
+    <div class="flex items-center gap-2 flex-wrap justify-end">
+      <span id="counter" class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded font-semibold">0 scan</span>
+      <span id="loggedUser" class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded"></span>
+      <button id="adminBtn" onclick="toggleAdmin()" class="hidden text-xs bg-purple-600 text-white px-2 py-1 rounded">Kelola User</button>
+      <button onclick="location.reload()" class="text-xs text-gray-500 underline">Keluar</button>
+    </div>
+  </div>
+
+  <div id="adminPanel" class="hidden space-y-3">
+    <h3 class="font-semibold text-gray-800">Tambah User</h3>
+    <input id="aUser" autocapitalize="none" placeholder="Username" class="w-full p-3 border rounded-lg">
+    <input id="aPass" placeholder="Password" class="w-full p-3 border rounded-lg">
+    <input id="aNama" placeholder="Nama (opsional)" class="w-full p-3 border rounded-lg">
+    <button onclick="tambahUserBaru()" class="w-full bg-purple-600 text-white p-3 rounded-lg font-semibold">Tambah</button>
+    <h3 class="font-semibold text-gray-800 pt-2">Daftar User</h3>
+    <div id="userList" class="space-y-2"></div>
+  </div>
+
+  <form id="logForm" onsubmit="handleSubmit(event)" class="space-y-4">
+    <div>
+      <label class="block text-sm font-medium text-gray-700">Kode Barcode</label>
+      <div class="flex gap-2 mt-1">
+        <input id="barcode" required autocomplete="off" placeholder="Scan atau ketik..." class="w-full p-3 border rounded-lg font-mono">
+        <button type="button" onclick="openScanner()" class="bg-gray-800 text-white px-4 rounded-lg text-sm whitespace-nowrap">📷 Scan</button>
+      </div>
+      <div class="flex items-center justify-between mt-2 text-xs text-gray-600">
+        <label class="flex items-center gap-1"><input type="checkbox" id="autoSave"> Simpan otomatis setelah scan</label>
+        <label class="underline cursor-pointer">Scan dari foto
+          <input type="file" id="fileScan" accept="image/*" capture="environment" class="hidden">
+        </label>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div><label class="block text-sm font-medium text-gray-700">Shift</label>
+        <select id="shift" required class="w-full mt-1 p-3 border rounded-lg bg-white">
+          <option value="">Pilih</option><option>Pagi</option><option>Siang</option><option>Malam</option>
+        </select></div>
+      <div><label class="block text-sm font-medium text-gray-700">Kurir</label>
+        <select id="kurir" required class="w-full mt-1 p-3 border rounded-lg bg-white"><option value="">Pilih</option></select></div>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div><label class="block text-sm font-medium text-gray-700">Plat Kendaraan</label>
+        <input id="plat" required placeholder="B 1234 XYZ" autocapitalize="characters" class="w-full mt-1 p-3 border rounded-lg uppercase"></div>
+      <div><label class="block text-sm font-medium text-gray-700">Jenis Kendaraan</label>
+        <select id="jenisKendaraan" required class="w-full mt-1 p-3 border rounded-lg bg-white"><option value="">Pilih</option></select></div>
+    </div>
+    <button type="submit" id="submitBtn" class="w-full bg-green-600 text-white p-3 rounded-lg font-semibold disabled:opacity-60">Simpan Data</button>
+  </form>
+</div>
+
+<!-- SCANNER -->
+<div id="scanOverlay" class="hidden fixed inset-0 bg-black z-50 flex flex-col">
+  <div class="flex justify-between items-center p-3 text-white">
+    <span class="font-semibold">Arahkan ke barcode</span>
+    <div class="flex gap-2">
+      <button id="torchBtn" onclick="toggleTorch()" class="hidden bg-white/20 px-3 py-1 rounded">🔦</button>
+      <button onclick="closeScanner()" class="bg-red-600 px-3 py-1 rounded">Tutup</button>
+    </div>
+  </div>
+  <div class="flex-1 flex items-center justify-center overflow-hidden"><div id="reader" class="w-full"></div></div>
+</div>
+
+<div id="toast" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg text-white text-sm shadow-lg z-[60]"></div>
+
+<script>
+// ====== GANTI dengan URL Web App Apps Script Anda (yang berakhiran /exec) ======
+const API_URL = 'https://script.google.com/macros/s/AKfycbyNgFM7ygCMubFe2BncBr6ZKZTNqAZCWpgoxlhRXel2HUppTPvRPgtMxlsJHapoKZbGtg/exec';
+
+// Pengganti google.script.run supaya bisa jalan dari GitHub Pages
+const google = { script: { get run() { return makeRunner(); } } };
+function makeRunner(ok = () => {}, fail = () => {}) {
+  return new Proxy({}, { get: (_, name) => {
+    if (name === 'withSuccessHandler') return f => makeRunner(f, fail);
+    if (name === 'withFailureHandler') return f => makeRunner(ok, f);
+    return (...args) => {
+      fetch(API_URL, { method: 'POST', body: JSON.stringify({ fn: name, args }) })   // text/plain: tanpa preflight CORS
+        .then(r => r.json())
+        .then(d => d.error ? fail(new Error(d.error)) : ok(d.data))
+        .catch(e => fail(new Error('Gagal terhubung ke server: ' + e.message)));
+    };
+  } });
+}
+
+const $ = id => document.getElementById(id);
+let U = "", P = "", role = "", scanner = null, scanning = false, torchOn = false, count = 0;
+const run = () => google.script.run.withFailureHandler(err => toast(err.message || err, false));
+
+function toast(msg, ok = true) {
+  const t = $('toast'); t.textContent = msg;
+  t.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg text-white text-sm shadow-lg z-[60] ' + (ok ? 'bg-green-600' : 'bg-red-600');
+  clearTimeout(t._t); t._t = setTimeout(() => t.classList.add('hidden'), 2500);
+}
+function beep() {
+  try { const c = new (window.AudioContext || window.webkitAudioContext)(), o = c.createOscillator();
+    o.frequency.value = 1000; o.connect(c.destination); o.start(); setTimeout(() => { o.stop(); c.close(); }, 120); } catch (e) {}
+  if (navigator.vibrate) navigator.vibrate(80);
+}
+const store = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+const load = k => { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } };
+
+/* login */
+function handleLogin() {
+  const btn = $('loginBtn'); btn.disabled = true; btn.textContent = 'Memeriksa...';
+  const u = $('username').value, p = $('password').value;
+  google.script.run
+    .withSuccessHandler(res => {
+      btn.disabled = false; btn.textContent = 'Masuk';
+      if (!res.success) { $('loginMsg').textContent = res.message; return; }
+      U = u; P = p; role = res.role;
+      $('loginSection').classList.add('hidden'); $('appSection').classList.remove('hidden');
+      $('loggedUser').textContent = res.user;
+      if (role === 'admin') $('adminBtn').classList.remove('hidden');
+      loadMaster();
+    })
+    .withFailureHandler(err => { btn.disabled = false; btn.textContent = 'Masuk'; $('loginMsg').textContent = 'Error: ' + (err.message || err); })
+    .verifyLogin(u, p);
+}
+['username', 'password'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') handleLogin(); }));
+
+/* pendaftaran */
+function showRegister(s) { $('registerSection').classList.toggle('hidden', !s); $('loginSection').classList.toggle('hidden', s); }
+function regMsg(m, ok) { $('regMsg').textContent = m; $('regMsg').className = 'text-sm ' + (ok ? 'text-green-700' : 'text-red-600'); }
+function kirimPermintaan() {
+  const d = { nik: $('regNik').value.trim(), nama: $('regNama').value.trim(), keterangan: $('regKet').value.trim() };
+  if (!/^\d{16}$/.test(d.nik)) return regMsg('NIK harus 16 digit angka.', false);
+  if (!d.nama || !d.keterangan) return regMsg('Nama dan keterangan wajib diisi.', false);
+  const btn = $('regBtn'); btn.disabled = true; btn.textContent = 'Mengirim...';
+  const reset = () => { btn.disabled = false; btn.textContent = 'Kirim Permintaan'; };
+  google.script.run
+    .withSuccessHandler(r => { reset(); regMsg(r.message, r.success); if (r.success) ['regNik', 'regNama', 'regKet'].forEach(i => $(i).value = ''); })
+    .withFailureHandler(err => { reset(); regMsg('Gagal mengirim: ' + (err.message || err), false); })
+    .kirimPermintaan(d);
+}
+
+/* kelola user */
+function toggleAdmin() {
+  const open = $('adminPanel').classList.contains('hidden');
+  $('adminPanel').classList.toggle('hidden', !open); $('logForm').classList.toggle('hidden', open);
+  $('adminBtn').textContent = open ? 'Kembali ke Form' : 'Kelola User';
+  if (open) loadUsers();
+}
+function loadUsers() {
+  run().withSuccessHandler(list => {
+    const box = $('userList'); box.innerHTML = '';
+    list.forEach(u => {
+      const row = document.createElement('div'); row.className = 'flex items-center justify-between border rounded-lg p-2 text-sm';
+      const info = document.createElement('div'); info.textContent = u.username + (u.nama ? ' - ' + u.nama : '') + (u.role === 'admin' ? ' (main)' : '');
+      row.appendChild(info);
+      if (u.role !== 'admin') {
+        const b = document.createElement('button'); b.textContent = 'Hapus'; b.className = 'text-red-600 text-xs underline';
+        b.onclick = () => { if (confirm('Hapus user "' + u.username + '"?')) run().withSuccessHandler(r => { toast(r.message, r.success); loadUsers(); }).adminDelete(U, P, u.username); };
+        row.appendChild(b);
+      }
+      box.appendChild(row);
+    });
+  }).adminList(U, P);
+}
+function tambahUserBaru() {
+  run().withSuccessHandler(r => { toast(r.message, r.success); if (r.success) { ['aUser', 'aPass', 'aNama'].forEach(i => $(i).value = ''); loadUsers(); } })
+    .adminAdd(U, P, { username: $('aUser').value, password: $('aPass').value, nama: $('aNama').value });
+}
+
+/* master data */
+function fill(id, items, saved) { const s = $(id); items.forEach(v => s.add(new Option(v, v))); if (saved && items.includes(saved)) s.value = saved; }
+function loadMaster() {
+  run().withSuccessHandler(d => {
+    fill('kurir', d.kurir, load('kurir')); fill('jenisKendaraan', d.kendaraan, load('jenis'));
+    $('shift').value = load('shift'); $('plat').value = load('plat'); $('barcode').focus();
+  }).getMasterData(U, P);
+}
+
+/* scanner kamera */
+async function openScanner() {
+  if (scanning) return;
+  $('scanOverlay').classList.remove('hidden');
+  scanner = new Html5Qrcode('reader', { verbose: false, useBarCodeDetectorIfSupported: true });
+  try {
+    await scanner.start({ facingMode: 'environment' },
+      { fps: 15, aspectRatio: 1.333, qrbox: (w, h) => ({ width: Math.floor(w * 0.85), height: Math.floor(Math.min(h * 0.45, w * 0.45)) }) },
+      onScanned, () => {});
+    scanning = true;
+    const c = scanner.getRunningTrackCameraCapabilities();
+    if (c && c.torchFeature && c.torchFeature().isSupported()) $('torchBtn').classList.remove('hidden');
+  } catch (err) {
+    closeScanner();
+    toast(/Permission|NotAllowed/i.test(String(err)) ? 'Izin kamera ditolak. Aktifkan izin kamera di browser.' : 'Kamera tidak bisa dibuka. Pakai "Scan dari foto" atau ketik manual.', false);
+  }
+}
+function onScanned(text) {
+  if (!scanning) return;
+  beep(); $('barcode').value = text.trim(); closeScanner();
+  if ($('autoSave').checked && $('logForm').checkValidity()) $('logForm').requestSubmit();
+}
+async function closeScanner() {
+  scanning = false; torchOn = false; $('torchBtn').classList.add('hidden'); $('scanOverlay').classList.add('hidden');
+  if (scanner) { try { await scanner.stop(); scanner.clear(); } catch (e) {} scanner = null; }
+}
+function toggleTorch() { const t = scanner && scanner.getRunningTrackCameraCapabilities().torchFeature(); if (t) { torchOn = !torchOn; t.apply(torchOn); } }
+$('fileScan').addEventListener('change', async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const text = await new Html5Qrcode('reader', { verbose: false, useBarCodeDetectorIfSupported: true }).scanFile(f, false);
+    beep(); $('barcode').value = text.trim();
+    if ($('autoSave').checked && $('logForm').checkValidity()) $('logForm').requestSubmit();
+  } catch (err) { toast('Barcode tidak terbaca, coba foto lebih dekat/terang.', false); }
+  e.target.value = '';
+});
+
+/* simpan */
+function handleSubmit(e, force) {
+  e.preventDefault();
+  const btn = $('submitBtn'); btn.disabled = true; btn.textContent = 'Menyimpan...';
+  const d = { barcode: $('barcode').value.trim(), shift: $('shift').value, kurir: $('kurir').value,
+    plat: $('plat').value.toUpperCase().trim(), jenisKendaraan: $('jenisKendaraan').value };
+  const done = () => { btn.disabled = false; btn.textContent = 'Simpan Data'; };
+  google.script.run
+    .withSuccessHandler(r => {
+      done();
+      if (r.duplicate) { if (confirm(r.message)) handleSubmit(e, true); else $('barcode').select(); return; }
+      if (!r.success) return toast(r.message, false);
+      toast(r.message); $('counter').textContent = (++count) + ' scan';
+      store('shift', d.shift); store('kurir', d.kurir); store('plat', d.plat); store('jenis', d.jenisKendaraan);
+      $('barcode').value = ''; $('barcode').focus();
+    })
+    .withFailureHandler(err => { done(); toast(err.message || err, false); })
+    .saveData(U, P, d, !!force);
+}
+</script>
+</body>
+</html>
