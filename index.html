@@ -35,14 +35,12 @@
   <div class="flex justify-between items-center mb-4 border-b pb-2">
     <h2 class="text-lg font-bold text-gray-800">Input Pengantaran</h2>
     <div class="flex items-center gap-2 flex-wrap justify-end">
-      <span id="counter" class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded font-semibold">0 QR</span>
+      <span id="counter" class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded font-semibold">0 struk</span>
       <span id="loggedUser" class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded"></span>
       <button id="adminBtn" onclick="toggleAdmin()" class="hidden text-xs bg-purple-600 text-white px-2 py-1 rounded">Kelola Data</button>
       <button onclick="location.reload()" class="text-xs text-gray-500 underline">Keluar</button>
     </div>
   </div>
-
-  <p id="masterInfo" class="text-xs text-gray-500 -mt-2 mb-3"></p>
 
   <div id="adminPanel" class="hidden space-y-4">
     <div class="flex gap-2">
@@ -93,7 +91,7 @@
       <button id="startBtn" onclick="startTrip()" class="w-full bg-blue-600 text-white p-3 rounded-lg font-semibold">Mulai Pengantaran</button>
     </div>
 
-    <!-- LANGKAH 2: MUATAN (QR) -->
+    <!-- LANGKAH 2: MUATAN (STRUK) -->
     <div id="stepQR" class="hidden space-y-3">
       <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-900 flex justify-between items-start gap-2">
         <div>
@@ -102,38 +100,45 @@
         </div>
         <button onclick="newTrip()" class="text-xs bg-white border border-blue-300 text-blue-700 px-2 py-1 rounded whitespace-nowrap">Pengantaran Baru</button>
       </div>
-      <div class="text-sm font-semibold text-gray-700">2. Muatan (Scan QR)</div>
-      <div class="flex gap-2">
-        <input id="qr" autocomplete="off" placeholder="Scan atau ketik kode QR..." class="w-full p-3 border rounded-lg font-mono">
-        <button onclick="openScanner()" class="bg-gray-800 text-white px-4 rounded-lg text-sm whitespace-nowrap">📷 Scan QR</button>
-      </div>
-      <button id="saveQrBtn" onclick="saveTyped()" class="w-full bg-green-600 text-white p-3 rounded-lg font-semibold disabled:opacity-60">Simpan QR</button>
+      <div class="text-sm font-semibold text-gray-700">2. Muatan (Foto Struk)</div>
+      <button onclick="openScanner()" class="w-full bg-gray-800 text-white p-3 rounded-lg text-sm font-semibold">📷 Buka Kamera & Baca Struk</button>
       <div>
-        <div class="flex justify-between text-sm font-medium text-gray-700 mb-1"><span>Muatan pengantaran ini</span><span id="tripCount">0</span></div>
+        <label class="block text-sm font-medium text-gray-700">Trx Id</label>
+        <input id="trxId" autocomplete="off" autocapitalize="characters" placeholder="contoh: TRX202299" class="w-full mt-1 p-3 border rounded-lg font-mono uppercase">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700">Tgl.PB</label>
+        <input id="tglPb" autocomplete="off" placeholder="DD-MM-YYYY HH:mm:ss" class="w-full mt-1 p-3 border rounded-lg font-mono">
+      </div>
+      <label class="flex items-center gap-1 text-xs text-gray-600"><input type="checkbox" id="autoSave"> Simpan otomatis jika Trx Id & Tgl.PB terbaca</label>
+      <button id="saveBtn" onclick="saveStruk()" class="w-full bg-green-600 text-white p-3 rounded-lg font-semibold disabled:opacity-60">Simpan Struk</button>
+      <div>
+        <div class="flex justify-between text-sm font-medium text-gray-700 mb-1"><span>Struk pengantaran ini</span><span id="tripCount">0</span></div>
         <div id="qrList" class="space-y-1 max-h-56 overflow-y-auto"></div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- SCANNER -->
+<!-- KAMERA (preview ringan, OCR hanya berjalan saat tombol ditekan) -->
 <div id="scanOverlay" class="hidden fixed inset-0 bg-black z-50 flex flex-col">
   <div class="flex justify-between items-center p-3 text-white">
-    <span class="font-semibold">Scan QR Muatan <span id="scanCount" class="ml-2 text-xs bg-green-600 px-2 py-0.5 rounded">0</span></span>
+    <span class="font-semibold">Foto Struk</span>
     <div class="flex gap-2">
       <button id="torchBtn" onclick="toggleTorch()" class="hidden bg-white/20 px-3 py-1 rounded">🔦</button>
-      <button onclick="closeScanner()" class="bg-red-600 px-3 py-1 rounded">Selesai</button>
+      <button onclick="closeScanner()" class="bg-red-600 px-3 py-1 rounded">Tutup</button>
     </div>
   </div>
   <div class="flex-1 flex items-center justify-center overflow-hidden">
-    <div class="relative w-full">
-      <video id="cam" playsinline muted class="w-full block"></video>
-      <div class="absolute inset-x-[15%] inset-y-[25%] border-2 border-green-400 rounded pointer-events-none"></div>
+    <div id="camWrap" class="relative w-full">
+      <video id="cam" playsinline muted class="w-full h-full object-cover block"></video>
+      <div class="absolute inset-x-[4%] inset-y-[12%] border-2 border-green-400 rounded pointer-events-none"></div>
     </div>
   </div>
-  <div class="p-4 space-y-1">
-    <p id="scanLast" class="text-center text-green-300 text-sm font-mono break-all min-h-5"></p>
-    <p class="text-center text-gray-300 text-xs">Arahkan ke QR. Scan berlanjut otomatis, tekan Selesai jika sudah.</p>
+  <div class="p-4 space-y-2">
+    <p id="ocrStatus" class="text-center text-green-300 text-xs min-h-4"></p>
+    <p class="text-center text-gray-300 text-xs">Posisikan bagian atas struk (Trx Id sampai Tgl.PB) di dalam kotak hijau, pastikan terang dan tidak buram.</p>
+    <button id="snapBtn" onclick="snap()" class="w-full bg-green-600 text-white p-3 rounded-lg font-semibold disabled:opacity-60">Ambil & Baca Struk</button>
   </div>
 </div>
 
@@ -165,7 +170,7 @@ function makeRunner(ok = () => {}, fail = () => {}) {
   const set = (t, c) => { el.textContent = t; el.className = 'text-xs text-center ' + c; };
   if (API_URL.indexOf('script.google.com') < 0) return set('⚠ API_URL di index.html belum diisi URL /exec', 'text-red-600');
   fetch(API_URL).then(r => r.text()).then(t => {
-    const j = JSON.parse(t), ok = Number(j.versi) >= 4;
+    const j = JSON.parse(t), ok = Number(j.versi) >= 5;
     set('● Server terhubung ' + (j.versi ? '(kode v' + j.versi + ')' : '') + (ok ? '' : ' - kode LAMA: deploy ulang dengan New version'), ok ? 'text-green-600' : 'text-amber-600');
   }).catch(() => set('⚠ Server tidak terhubung. Cek URL /exec dan deployment (akses: Anyone).', 'text-red-600'));
 })();
@@ -253,9 +258,8 @@ let waktuManual = false;
 function waktuNow() { const h = new Date().getHours(); return h >= 5 && h < 11 ? 'Pagi' : h >= 11 && h < 18 ? 'Siang' : 'Malam'; }
 $('waktu').addEventListener('change', () => { waktuManual = true; });
 
-/* langkah 1 & 2: pengantaran dan muatan */
-let trip = null, queue = Promise.resolve();
-const inflight = new Set();
+/* langkah 1 & 2: pengantaran dan struk */
+let trip = null, saving = false;
 
 function startTrip() {
   const kurir = $('kurir').value, plat = $('kendaraan').value, m = findPlat(plat);
@@ -268,52 +272,179 @@ function startTrip() {
   $('startBtn').classList.add('hidden');
   $('stepQR').classList.remove('hidden');
   $('tripInfo').textContent = trip.kurir + ' • ' + trip.plat + ' (' + trip.jenis + ') • ' + trip.waktu;
-  renderTrip(); $('qr').focus();
+  renderTrip();
 }
 function newTrip() {
-  if (trip && inflight.size) return toast('Tunggu penyimpanan selesai.', false);
+  if (saving) return toast('Tunggu penyimpanan selesai.', false);
   trip = null;
   ['kurir', 'kendaraan', 'waktu'].forEach(i => $(i).disabled = false);
   if (!waktuManual) $('waktu').value = waktuNow();
   $('startBtn').classList.remove('hidden'); $('stepQR').classList.add('hidden');
-  $('qr').value = ''; $('qrList').innerHTML = '';
+  $('trxId').value = ''; $('tglPb').value = ''; $('qrList').innerHTML = '';
 }
 function renderTrip() {
   if (!trip) return;
-  $('tripId').textContent = trip.id ? 'ID Pengantaran: ' + trip.id : 'ID dibuat saat QR pertama disimpan';
-  $('tripCount').textContent = trip.items.length + ' QR';
-  $('qrList').innerHTML = trip.items.slice().reverse().map((q, i) =>
-    '<div class="flex justify-between text-sm border rounded-lg px-2 py-1 bg-gray-50"><span class="font-mono break-all">' + esc(q) + '</span><span class="text-gray-400 text-xs ml-2">#' + (trip.items.length - i) + '</span></div>').join('');
-  $('counter').textContent = total + ' QR';
+  $('tripId').textContent = trip.id ? 'ID Pengantaran: ' + trip.id : 'ID dibuat saat struk pertama disimpan';
+  $('tripCount').textContent = trip.items.length + ' struk';
+  $('qrList').innerHTML = trip.items.slice().reverse().map((x, i) =>
+    '<div class="flex justify-between items-center text-sm border rounded-lg px-2 py-1 bg-gray-50"><span class="font-mono">' + esc(x.trxId) +
+    '<span class="block text-xs text-gray-500">' + esc(x.tglPb) + '</span></span><span class="text-gray-400 text-xs ml-2">#' + (trip.items.length - i) + '</span></div>').join('');
+  $('counter').textContent = total + ' struk';
 }
 
-function submitQR(text) {
-  text = String(text || '').trim();
-  if (!text || !trip) return Promise.resolve(false);
+const TGL_RE = /^\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}$/;
+function tglOk(s) {
+  if (!TGL_RE.test(s)) return false;
+  const [d, mo, , h, mi, se] = s.match(/\d+/g).map(Number);
+  return d >= 1 && d <= 31 && mo >= 1 && mo <= 12 && h < 24 && mi < 60 && se < 60;
+}
+
+async function saveStruk() {
+  if (!trip || saving) return;
+  const trxId = $('trxId').value.trim().toUpperCase().replace(/\s+/g, ''), tglPb = $('tglPb').value.trim().replace(/\s+/g, ' ');
+  if (!trxId) return toast('Trx Id belum diisi.', false);
+  if (!tglOk(tglPb)) return toast('Tgl.PB harus berformat DD-MM-YYYY HH:mm:ss.', false, 4000);
+  if (trip.items.some(x => x.trxId === trxId)) return toast('Trx Id sudah ada di pengantaran ini.', false);
+  saving = true; const btn = $('saveBtn'); btn.disabled = true; btn.textContent = 'Menyimpan...';
   const t = trip;
-  if (t.items.includes(text) || inflight.has(text)) { toast('QR sudah ada di pengantaran ini.', false); return Promise.resolve(false); }
-  inflight.add(text);
-  const job = queue.then(async () => {            // antrean: QR pertama membuat ID, berikutnya memakai ID itu
-    try {
-      const f = { id: t.id, waktu: t.waktu, kurir: t.kurir, plat: t.plat, qr: text };
-      let r = await api('simpanQR', f, false);
-      if (r.duplicate) { if (!confirm(r.message)) return false; r = await api('simpanQR', f, true); }
-      if (!r.success) { toast(r.message, false, 5000); return false; }
-      t.id = r.id; t.items.push(text); total++;
-      if (trip === t) renderTrip();
-      toast(r.message); return true;
-    } catch (e) { toast(e.message || e, false, 6000); return false; }
-    finally { inflight.delete(text); }
+  try {
+    const f = { id: t.id, waktu: t.waktu, kurir: t.kurir, plat: t.plat, trxId, tglPb };
+    let r = await api('simpanStruk', f, false);
+    if (r.duplicate) { if (!confirm(r.message)) return; r = await api('simpanStruk', f, true); }
+    if (!r.success) return toast(r.message, false, 5000);
+    t.id = r.id; t.items.push({ trxId, tglPb }); total++;
+    $('trxId').value = ''; $('tglPb').value = '';
+    renderTrip(); toast(r.message);
+  } catch (e) { toast(e.message || e, false, 6000); }
+  finally { saving = false; btn.disabled = false; btn.textContent = 'Simpan Struk'; }
+}
+$('tglPb').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveStruk(); } });
+
+/* ekstraksi Trx Id & Tgl.PB dari teks hasil OCR (toleran terhadap salah baca O/0, I/l/1) */
+function extractStruk(raw) {
+  const t = String(raw || '').replace(/\r/g, '').replace(/\|/g, 'I');
+  const fixDigits = s => s.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+
+  // Trx Id
+  let trx = '', m = t.match(/Tr[xk]\s*[Il1!]d\s*[:;.,]*\s*([A-Za-z0-9]{4,20})/i) || t.match(/\b(TRX\s?[0-9OQIL]{3,})/i);
+  if (m) {
+    trx = m[1].toUpperCase().replace(/\s+/g, '');
+    const p = trx.match(/^TRX[0-9OQIL]+/);
+    if (p) trx = 'TRX' + p[0].slice(3).replace(/[OQ]/g, '0').replace(/[IL]/g, '1');
+  }
+
+  // Tgl.PB -> DD-MM-YYYY HH:mm:ss
+  const D = '[0-9OoIl]', S = '\\s*[-/.]\\s*', C = '\\s*[:.;]\\s*';
+  const re = new RegExp('T[gq][lI1]\\.?\\s*P[B8]\\s*[:;.,]*\\s*(' + D + '{2})' + S + '(' + D + '{2})' + S + '(' + D + '{4})\\s+(' + D + '{2})' + C + '(' + D + '{2})' + C + '(' + D + '{2})', 'i');
+  let tgl = '', guess = false, g = t.match(re);
+  if (!g) { g = t.match(/(\d{2})\s*-\s*(\d{2})\s*-\s*(\d{4})\s+(\d{2})\s*:\s*(\d{2})\s*:\s*(\d{2})/); guess = !!g; }
+  if (g) {
+    const v = g.slice(1, 7).map(fixDigits);
+    const s = v[0] + '-' + v[1] + '-' + v[2] + ' ' + v[3] + ':' + v[4] + ':' + v[5];
+    if (tglOk(s)) tgl = s;
+  }
+  return { trx, tgl, guess };
+}
+
+/* kamera + OCR (Tesseract.js, dimuat hanya saat kamera dibuka; OCR berjalan hanya saat tombol ditekan) */
+let stream = null, torchOn = false, ocrBusy = false, ocrReady = null, worker = null;
+const cv = document.createElement('canvas'), ctx = cv.getContext('2d', { willReadFrequently: true });
+const setStatus = t => { $('ocrStatus').textContent = t; };
+
+function loadTess() {
+  return window.Tesseract ? Promise.resolve() : new Promise((ok, no) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+    s.onload = ok; s.onerror = () => no(new Error('Gagal memuat Tesseract.js. Periksa koneksi internet.'));
+    document.head.appendChild(s);
   });
-  queue = job.catch(() => {});
-  return job;
 }
-function saveTyped() {
-  const v = $('qr').value.trim(); if (!v) return;
-  const btn = $('saveQrBtn'); btn.disabled = true;
-  submitQR(v).then(ok => { if (ok) $('qr').value = ''; }).finally(() => { btn.disabled = false; $('qr').focus(); });
+function prepareOCR() {
+  if (ocrReady) return ocrReady;
+  setStatus('Menyiapkan OCR (pertama kali agak lama)...');
+  ocrReady = (async () => {
+    await loadTess();
+    worker = await Tesseract.createWorker('eng', 1, {
+      logger: m => {
+        const pct = Math.round((m.progress || 0) * 100);
+        if (m.status === 'recognizing text') $('snapBtn').textContent = 'Membaca... ' + pct + '%';
+        else if (ocrBusy || !worker) setStatus(m.status + ' ' + pct + '%');
+      }
+    });
+    await worker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK, preserve_interword_spaces: '1' });
+    setStatus('OCR siap.');
+  })().catch(e => { ocrReady = null; worker = null; setStatus(''); throw e; });
+  return ocrReady;
 }
-$('qr').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveTyped(); } });
+
+function grab() {                       // potong area di dalam kotak hijau, lalu skala ke lebar ±1400px
+  const v = $('cam'), vw = v.videoWidth, vh = v.videoHeight;
+  if (!vw) return null;
+  const sx = vw * 0.04, sy = vh * 0.12, sw = vw * 0.92, sh = vh * 0.76, k = Math.min(2, 1400 / sw);
+  cv.width = Math.round(sw * k); cv.height = Math.round(sh * k);
+  ctx.drawImage(v, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+  return cv;
+}
+function preprocess(c) {                // abu-abu + perenggang kontras agar teks struk lebih tajam
+  const im = ctx.getImageData(0, 0, c.width, c.height), d = im.data, n = d.length / 4, hist = new Uint32Array(256);
+  for (let i = 0; i < d.length; i += 4) { const y = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) | 0; d[i] = y; hist[y]++; }
+  let acc = 0, lo = 0, hi = 255;
+  for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= n * 0.02) { lo = v; break; } }
+  acc = 0;
+  for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= n * 0.98) { hi = v; break; } }
+  const span = Math.max(1, hi - lo);
+  for (let i = 0; i < d.length; i += 4) { let y = (d[i] - lo) * 255 / span; y = y < 0 ? 0 : y > 255 ? 255 : y; d[i] = d[i + 1] = d[i + 2] = y; }
+  ctx.putImageData(im, 0, 0);
+}
+
+async function openScanner() {
+  if (stream || !trip) return;
+  $('scanOverlay').classList.remove('hidden'); setStatus('');
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+    const v = $('cam'); v.srcObject = stream; await v.play();
+    const w = $('camWrap'), r = v.videoWidth / v.videoHeight;       // kotak panduan = proporsi video agar crop akurat
+    w.style.aspectRatio = v.videoWidth + '/' + v.videoHeight; w.style.maxWidth = (68 * r) + 'vh';
+  } catch (err) {
+    closeScanner();
+    return toast(/Permission|NotAllowed/i.test(String(err)) ? 'Izin kamera ditolak. Aktifkan izin kamera di browser.' : 'Kamera tidak bisa dibuka. Isi Trx Id dan Tgl.PB secara manual.', false, 5000);
+  }
+  const tr = stream.getVideoTracks()[0], caps = tr.getCapabilities ? tr.getCapabilities() : {};
+  if (caps.torch) $('torchBtn').classList.remove('hidden');
+  tr.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
+  prepareOCR().catch(e => toast(e.message || 'OCR gagal disiapkan.', false, 6000));   // siapkan di latar belakang
+}
+function closeScanner() {
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  $('cam').srcObject = null; torchOn = false;
+  $('torchBtn').classList.add('hidden'); $('scanOverlay').classList.add('hidden');
+}
+async function toggleTorch() {
+  try { torchOn = !torchOn; await stream.getVideoTracks()[0].applyConstraints({ advanced: [{ torch: torchOn }] }); }
+  catch (e) { torchOn = false; }
+}
+
+async function snap() {
+  if (!stream || ocrBusy) return;
+  const btn = $('snapBtn'); ocrBusy = true; btn.disabled = true;
+  try {
+    const c = grab(); if (!c) throw new Error('Kamera belum siap, coba lagi.');
+    preprocess(c);
+    btn.textContent = 'Menyiapkan OCR...';
+    await prepareOCR();
+    btn.textContent = 'Membaca... 0%';
+    const { data } = await worker.recognize(c);
+    const r = extractStruk(data.text);
+    if (!r.trx && !r.tgl) { toast('Trx Id / Tgl.PB tidak terbaca. Dekatkan, perjelas cahaya, lalu coba lagi.', false, 5000); return; }
+    $('trxId').value = r.trx; $('tglPb').value = r.tgl;
+    beep(); closeScanner();
+    const both = r.trx && r.tgl;
+    toast(both ? (r.guess ? 'Terbaca, label Tgl.PB tidak jelas: periksa tanggal.' : 'Struk terbaca. Periksa lalu simpan.') : 'Sebagian terbaca, lengkapi secara manual.', !!both && !r.guess, 4500);
+    if (both && !r.guess && $('autoSave').checked) saveStruk(); else (r.trx ? $('tglPb') : $('trxId')).focus();
+  } catch (e) { toast(e.message || 'Gagal membaca struk.', false, 6000); }
+  finally { ocrBusy = false; btn.disabled = false; btn.textContent = 'Ambil & Baca Struk'; }
+}
 
 /* kelola data (main user) */
 function toggleAdmin() {
@@ -359,93 +490,6 @@ function tambahKendaraan() { act('adminAddKendaraan', [$('vPlat').value, $('vJen
 function renderAdminMaster() {
   renderList('kurirList', M.kurir.map(n => ({ n })), x => x.n, x => confirm('Hapus kurir "' + x.n + '"?') && act('adminDeleteKurir', [x.n]));
   renderList('kendList', M.kendaraan, x => x.plat + ' - ' + x.jenis, x => confirm('Hapus kendaraan ' + x.plat + '?') && act('adminDeleteKendaraan', [x.plat]));
-}
-
-/* scanner QR (BarcodeDetector bawaan browser; jsQR dimuat hanya jika browser tidak mendukung).
-   Kamera tetap terbuka: tiap QR langsung disimpan, tekan Selesai bila sudah. */
-let detector = null, stream = null, loopTimer = null, busy = false, torchOn = false, lastText = '', lastTime = 0, scanned = 0;
-const cv = document.createElement('canvas'), ctx = cv.getContext('2d', { willReadFrequently: true });
-
-async function getDetector() {
-  if (!('BarcodeDetector' in window)) return null;
-  if (detector) return detector;
-  try {
-    const sup = await BarcodeDetector.getSupportedFormats();
-    if (sup.includes('qr_code')) detector = new BarcodeDetector({ formats: ['qr_code'] });
-  } catch (e) { detector = null; }
-  return detector;
-}
-function loadJsQR() {
-  return window.jsQR ? Promise.resolve() : new Promise((ok, no) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
-    s.onload = ok; s.onerror = () => no(new Error('Gagal memuat pemindai QR.'));
-    document.head.appendChild(s);
-  });
-}
-async function decodeCanvas(c) {
-  const d = await getDetector();
-  if (d) { const r = await d.detect(c); return r.length ? r[0].rawValue : null; }
-  await loadJsQR();
-  const im = ctx.getImageData(0, 0, c.width, c.height);
-  const q = jsQR(im.data, im.width, im.height, { inversionAttempts: 'dontInvert' });
-  return q ? q.data : null;
-}
-function grab() {                       // potong area tengah + kecilkan agar ringan
-  const v = $('cam'), vw = v.videoWidth, vh = v.videoHeight;
-  if (!vw) return null;
-  const cw = vw * 0.7, ch = vh * 0.5, scale = Math.min(1, 640 / cw);
-  cv.width = Math.round(cw * scale); cv.height = Math.round(ch * scale);
-  ctx.drawImage(v, (vw - cw) / 2, (vh - ch) / 2, cw, ch, 0, 0, cv.width, cv.height);
-  return cv;
-}
-
-async function openScanner() {
-  if (stream || !trip) return;
-  scanned = 0; lastText = ''; $('scanCount').textContent = '0'; $('scanLast').textContent = '';
-  $('scanOverlay').classList.remove('hidden');
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
-    const v = $('cam'); v.srcObject = stream; await v.play();
-  } catch (err) {
-    closeScanner();
-    return toast(/Permission|NotAllowed/i.test(String(err)) ? 'Izin kamera ditolak. Aktifkan izin kamera di browser.' : 'Kamera tidak bisa dibuka. Ketik kode QR secara manual.', false, 5000);
-  }
-  const tr = stream.getVideoTracks()[0], caps = tr.getCapabilities ? tr.getCapabilities() : {};
-  if (caps.torch) $('torchBtn').classList.remove('hidden');
-  tr.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
-  loop();
-}
-function loop(delay = 250) {            // ±4x per detik, ringan
-  clearTimeout(loopTimer);
-  loopTimer = setTimeout(async () => { if (!stream) return; const hit = await tryScan(); loop(hit ? 900 : 250); }, delay);
-}
-async function tryScan() {
-  if (busy || !stream) return false;
-  busy = true;
-  try {
-    const c = grab(), text = c && await decodeCanvas(c);
-    if (!text) return false;
-    const now = Date.now();
-    if (text === lastText && now - lastTime < 3000) { lastTime = now; return false; }   // abaikan QR yang sama berturut-turut
-    lastText = text; lastTime = now;
-    beep(); $('scanLast').textContent = text;
-    submitQR(text).then(ok => { if (ok) { scanned++; $('scanCount').textContent = scanned; } });
-    return true;
-  } catch (e) { return false; }
-  finally { busy = false; }
-}
-function closeScanner() {
-  clearTimeout(loopTimer);
-  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-  $('cam').srcObject = null; torchOn = false;
-  $('torchBtn').classList.add('hidden'); $('scanOverlay').classList.add('hidden');
-  if (trip) $('qr').focus();
-}
-async function toggleTorch() {
-  try { torchOn = !torchOn; await stream.getVideoTracks()[0].applyConstraints({ advanced: [{ torch: torchOn }] }); }
-  catch (e) { torchOn = false; }
 }
 </script>
 </body>
