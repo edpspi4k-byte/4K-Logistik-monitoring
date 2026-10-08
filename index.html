@@ -101,7 +101,8 @@
         <button onclick="newTrip()" class="text-xs bg-white border border-blue-300 text-blue-700 px-2 py-1 rounded whitespace-nowrap">Pengantaran Baru</button>
       </div>
       <div class="text-sm font-semibold text-gray-700">2. Muatan (Foto Struk)</div>
-      <button onclick="openScanner()" class="w-full bg-gray-800 text-white p-3 rounded-lg text-sm font-semibold">📷 Buka Kamera & Baca Struk</button>
+      <button id="camBtn" onclick="openScanner()" class="w-full bg-gray-800 text-white p-3 rounded-lg text-sm font-semibold disabled:opacity-60">📷 Buka Kamera & Baca Struk</button>
+      <div id="ocrInfo" class="hidden bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-sm"></div>
       <div>
         <label class="block text-sm font-medium text-gray-700">Trx Id</label>
         <input id="trxId" autocomplete="off" autocapitalize="characters" placeholder="contoh: TRX202299" class="w-full mt-1 p-3 border rounded-lg font-mono uppercase">
@@ -137,7 +138,7 @@
   </div>
   <div class="p-4 space-y-2">
     <p id="ocrStatus" class="text-center text-green-300 text-xs min-h-4"></p>
-    <p class="text-center text-gray-300 text-xs">Posisikan bagian atas struk (Trx Id sampai Tgl.PB) di dalam kotak hijau, pastikan terang dan tidak buram.</p>
+    <p class="text-center text-gray-300 text-xs">Posisikan bagian atas struk (Trx Id sampai Tgl.PB) di dalam kotak hijau. Tahan sebentar saja: begitu tombol ditekan gambar langsung diambil dan kamera menutup, struk boleh diturunkan.</p>
     <button id="snapBtn" onclick="snap()" class="w-full bg-green-600 text-white p-3 rounded-lg font-semibold disabled:opacity-60">Ambil & Baca Struk</button>
   </div>
 </div>
@@ -275,7 +276,7 @@ function startTrip() {
   renderTrip();
 }
 function newTrip() {
-  if (saving) return toast('Tunggu penyimpanan selesai.', false);
+  if (saving || ocrBusy) return toast('Tunggu proses selesai.', false);
   trip = null;
   ['kurir', 'kendaraan', 'waktu'].forEach(i => $(i).disabled = false);
   if (!waktuManual) $('waktu').value = waktuNow();
@@ -350,6 +351,7 @@ function extractStruk(raw) {
 let stream = null, torchOn = false, ocrBusy = false, ocrReady = null, worker = null;
 const cv = document.createElement('canvas'), ctx = cv.getContext('2d', { willReadFrequently: true });
 const setStatus = t => { $('ocrStatus').textContent = t; };
+const setInfo = t => { const e = $('ocrInfo'); e.textContent = t ? '⏳ ' + t : ''; e.classList.toggle('hidden', !t); };
 
 function loadTess() {
   return window.Tesseract ? Promise.resolve() : new Promise((ok, no) => {
@@ -367,8 +369,9 @@ function prepareOCR() {
     worker = await Tesseract.createWorker('eng', 1, {
       logger: m => {
         const pct = Math.round((m.progress || 0) * 100);
-        if (m.status === 'recognizing text') $('snapBtn').textContent = 'Membaca... ' + pct + '%';
-        else if (ocrBusy || !worker) setStatus(m.status + ' ' + pct + '%');
+        if (m.status === 'recognizing text') setInfo('Membaca struk... ' + pct + '%');
+        else if (ocrBusy) setInfo('Menyiapkan OCR... ' + pct + '%');
+        else setStatus(m.status + ' ' + pct + '%');
       }
     });
     await worker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK, preserve_interword_spaces: '1' });
@@ -399,6 +402,7 @@ function preprocess(c) {                // abu-abu + perenggang kontras agar tek
 
 async function openScanner() {
   if (stream || !trip) return;
+  if (ocrBusy) return toast('Tunggu pembacaan struk sebelumnya selesai.', false);
   $('scanOverlay').classList.remove('hidden'); setStatus('');
   try {
     stream = await navigator.mediaDevices.getUserMedia({
@@ -427,23 +431,25 @@ async function toggleTorch() {
 
 async function snap() {
   if (!stream || ocrBusy) return;
-  const btn = $('snapBtn'); ocrBusy = true; btn.disabled = true;
+  const c = grab(); if (!c) return toast('Kamera belum siap, coba lagi.', false);
+  preprocess(c);                         // gambar hanya ada di memori (canvas), tidak disimpan/diunggah
+  ocrBusy = true; $('camBtn').disabled = true;
+  if (navigator.vibrate) navigator.vibrate(60);
+  closeScanner();                        // kamera langsung ditutup: struk boleh diturunkan
+  setInfo('Gambar diambil, struk boleh diturunkan. Menyiapkan OCR...');
   try {
-    const c = grab(); if (!c) throw new Error('Kamera belum siap, coba lagi.');
-    preprocess(c);
-    btn.textContent = 'Menyiapkan OCR...';
     await prepareOCR();
-    btn.textContent = 'Membaca... 0%';
+    setInfo('Membaca struk... 0%');
     const { data } = await worker.recognize(c);
     const r = extractStruk(data.text);
-    if (!r.trx && !r.tgl) { toast('Trx Id / Tgl.PB tidak terbaca. Dekatkan, perjelas cahaya, lalu coba lagi.', false, 5000); return; }
+    if (!r.trx && !r.tgl) return toast('Trx Id / Tgl.PB tidak terbaca. Buka kamera lagi, dekatkan, dan perjelas cahaya.', false, 6000);
     $('trxId').value = r.trx; $('tglPb').value = r.tgl;
-    beep(); closeScanner();
+    beep();
     const both = r.trx && r.tgl;
     toast(both ? (r.guess ? 'Terbaca, label Tgl.PB tidak jelas: periksa tanggal.' : 'Struk terbaca. Periksa lalu simpan.') : 'Sebagian terbaca, lengkapi secara manual.', !!both && !r.guess, 4500);
     if (both && !r.guess && $('autoSave').checked) saveStruk(); else (r.trx ? $('tglPb') : $('trxId')).focus();
   } catch (e) { toast(e.message || 'Gagal membaca struk.', false, 6000); }
-  finally { ocrBusy = false; btn.disabled = false; btn.textContent = 'Ambil & Baca Struk'; }
+  finally { ocrBusy = false; c.width = c.height = 0; setInfo(''); $('camBtn').disabled = false; }   // hapus gambar dari memori
 }
 
 /* kelola data (main user) */
