@@ -111,12 +111,14 @@
         <label class="block text-sm font-medium text-gray-700">Tgl.PB</label>
         <input id="tglPb" autocomplete="off" placeholder="DD-MM-YYYY HH:mm:ss" class="w-full mt-1 p-3 border rounded-lg font-mono">
       </div>
-      <label class="flex items-center gap-1 text-xs text-gray-600"><input type="checkbox" id="autoSave"> Simpan otomatis jika Trx Id & Tgl.PB terbaca</label>
-      <button id="saveBtn" onclick="saveStruk()" class="w-full bg-green-600 text-white p-3 rounded-lg font-semibold disabled:opacity-60">Simpan Struk</button>
+      <label class="flex items-center gap-1 text-xs text-gray-600"><input type="checkbox" id="autoSave"> Tambah otomatis jika Trx Id & Tgl.PB terbaca</label>
+      <button id="addBtn" onclick="addStruk()" class="w-full bg-blue-600 text-white p-3 rounded-lg font-semibold">+ Tambah Struk</button>
       <div>
-        <div class="flex justify-between text-sm font-medium text-gray-700 mb-1"><span>Struk pengantaran ini</span><span id="tripCount">0</span></div>
+        <div class="flex justify-between text-sm font-medium text-gray-700 mb-1"><span>Daftar struk (belum diupload)</span><span id="tripCount">0 struk</span></div>
         <div id="qrList" class="space-y-1 max-h-56 overflow-y-auto"></div>
       </div>
+      <button id="uploadBtn" onclick="uploadAll()" class="w-full bg-green-600 text-white p-3 rounded-lg font-semibold disabled:opacity-50" disabled>Upload Semua</button>
+      <p class="text-xs text-gray-500">Struk disimpan sementara di perangkat ini dan baru dikirim ke Google Sheet saat tombol Upload Semua ditekan.</p>
     </div>
   </div>
 </div>
@@ -171,7 +173,7 @@ function makeRunner(ok = () => {}, fail = () => {}) {
   const set = (t, c) => { el.textContent = t; el.className = 'text-xs text-center ' + c; };
   if (API_URL.indexOf('script.google.com') < 0) return set('⚠ API_URL di index.html belum diisi URL /exec', 'text-red-600');
   fetch(API_URL).then(r => r.text()).then(t => {
-    const j = JSON.parse(t), ok = Number(j.versi) >= 5;
+    const j = JSON.parse(t), ok = Number(j.versi) >= 6;
     set('● Server terhubung ' + (j.versi ? '(kode v' + j.versi + ')' : '') + (ok ? '' : ' - kode LAMA: deploy ulang dengan New version'), ok ? 'text-green-600' : 'text-amber-600');
   }).catch(() => set('⚠ Server tidak terhubung. Cek URL /exec dan deployment (akses: Anyone).', 'text-red-600'));
 })();
@@ -242,7 +244,7 @@ function setOptions(id, items, keep) {
 function loadMaster(init) {
   run().withSuccessHandler(d => {
     M = d; renderMaster();
-    if (init) { waktuManual = false; $('waktu').value = waktuNow(); }
+    if (init) { waktuManual = false; $('waktu').value = waktuNow(); restoreDraft(); }
   }).getMasterData(U, P);
 }
 function renderMaster() {
@@ -267,30 +269,57 @@ function startTrip() {
   if (!kurir) return toast('Pilih kurir dulu.', false);
   if (!m) return toast('Pilih kendaraan dulu.', false);
   if (!waktuManual) $('waktu').value = waktuNow();
-  trip = { kurir, plat: m.plat, jenis: m.jenis, waktu: $('waktu').value, id: '', items: [] };
   store('kurir', kurir); store('plat', m.plat);
+  enterTrip({ kurir, plat: m.plat, jenis: m.jenis, waktu: $('waktu').value, items: [] });
+}
+function enterTrip(t) {
+  trip = t;
   ['kurir', 'kendaraan', 'waktu'].forEach(i => $(i).disabled = true);
-  $('startBtn').classList.add('hidden');
-  $('stepQR').classList.remove('hidden');
-  $('tripInfo').textContent = trip.kurir + ' • ' + trip.plat + ' (' + trip.jenis + ') • ' + trip.waktu;
+  $('startBtn').classList.add('hidden'); $('stepQR').classList.remove('hidden');
+  $('tripInfo').textContent = t.kurir + ' • ' + t.plat + ' (' + t.jenis + ') • ' + t.waktu;
   renderTrip();
 }
-function newTrip() {
-  if (saving || ocrBusy) return toast('Tunggu proses selesai.', false);
-  trip = null;
+function resetTrip() {
+  trip = null; clearDraft();
   ['kurir', 'kendaraan', 'waktu'].forEach(i => $(i).disabled = false);
   if (!waktuManual) $('waktu').value = waktuNow();
   $('startBtn').classList.remove('hidden'); $('stepQR').classList.add('hidden');
   $('trxId').value = ''; $('tglPb').value = ''; $('qrList').innerHTML = '';
 }
+function newTrip() {
+  if (saving || ocrBusy) return toast('Tunggu proses selesai.', false);
+  if (trip && trip.items.length && !confirm('Ada ' + trip.items.length + ' struk yang belum diupload. Buang semuanya dan mulai pengantaran baru?')) return;
+  resetTrip();
+}
 function renderTrip() {
   if (!trip) return;
-  $('tripId').textContent = trip.id ? 'ID Pengantaran: ' + trip.id : 'ID dibuat saat struk pertama disimpan';
-  $('tripCount').textContent = trip.items.length + ' struk';
-  $('qrList').innerHTML = trip.items.slice().reverse().map((x, i) =>
+  const n = trip.items.length;
+  $('tripId').textContent = 'ID pengantaran dibuat otomatis saat upload';
+  $('tripCount').textContent = n + ' struk';
+  $('uploadBtn').textContent = n ? 'Upload Semua (' + n + ' struk)' : 'Upload Semua';
+  $('uploadBtn').disabled = !n || saving;
+  $('qrList').innerHTML = trip.items.map((x, i) => ({ x, i })).reverse().map(({ x, i }) =>
     '<div class="flex justify-between items-center text-sm border rounded-lg px-2 py-1 bg-gray-50"><span class="font-mono">' + esc(x.trxId) +
-    '<span class="block text-xs text-gray-500">' + esc(x.tglPb) + '</span></span><span class="text-gray-400 text-xs ml-2">#' + (trip.items.length - i) + '</span></div>').join('');
+    '<span class="block text-xs text-gray-500">' + esc(x.tglPb) + '</span></span><span class="flex items-center"><span class="text-gray-400 text-xs">#' + (i + 1) +
+    '</span><button onclick="removeItem(' + i + ')" class="text-red-600 text-xs underline ml-3">Hapus</button></span></div>').join('');
   $('counter').textContent = total + ' struk';
+}
+
+/* draft: daftar struk yang belum diupload disimpan di perangkat agar tidak hilang saat halaman ter-refresh */
+const draftKey = () => 'draft_' + U.trim().toLowerCase();
+function saveDraft() { if (trip && trip.items.length) store(draftKey(), JSON.stringify(trip)); else clearDraft(); }
+function clearDraft() { try { localStorage.removeItem(draftKey()); } catch (e) {} }
+function restoreDraft() {
+  let t; try { t = JSON.parse(load(draftKey()) || 'null'); } catch (e) { t = null; }
+  if (!t || !Array.isArray(t.items) || !t.items.length) return;
+  const m = findPlat(t.plat);
+  if (!m || !M.kurir.includes(t.kurir) || !['Pagi', 'Siang', 'Malam'].includes(t.waktu)) return clearDraft();
+  const items = t.items.filter(x => x && x.trxId && x.tglPb).map(x => ({ trxId: String(x.trxId), tglPb: String(x.tglPb) }));
+  if (!items.length) return clearDraft();
+  waktuManual = true;
+  $('kurir').value = t.kurir; $('kendaraan').value = m.plat; $('waktu').value = t.waktu;
+  enterTrip({ kurir: t.kurir, plat: m.plat, jenis: m.jenis, waktu: t.waktu, items });
+  toast('Draft dipulihkan: ' + items.length + ' struk belum diupload.', true, 5000);
 }
 
 const TGL_RE = /^\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}$/;
@@ -300,26 +329,41 @@ function tglOk(s) {
   return d >= 1 && d <= 31 && mo >= 1 && mo <= 12 && h < 24 && mi < 60 && se < 60;
 }
 
-async function saveStruk() {
-  if (!trip || saving) return;
+function addStruk() {
+  if (!trip) return;
+  if (saving) return toast('Tunggu upload selesai.', false);
   const trxId = $('trxId').value.trim().toUpperCase().replace(/\s+/g, ''), tglPb = $('tglPb').value.trim().replace(/\s+/g, ' ');
   if (!trxId) return toast('Trx Id belum diisi.', false);
+  if (!/^[A-Z0-9._\/-]{3,40}$/.test(trxId)) return toast('Trx Id tidak valid (huruf/angka, 3-40 karakter).', false, 4000);
   if (!tglOk(tglPb)) return toast('Tgl.PB harus berformat DD-MM-YYYY HH:mm:ss.', false, 4000);
-  if (trip.items.some(x => x.trxId === trxId)) return toast('Trx Id sudah ada di pengantaran ini.', false);
-  saving = true; const btn = $('saveBtn'); btn.disabled = true; btn.textContent = 'Menyimpan...';
+  if (trip.items.some(x => x.trxId === trxId)) return toast('Trx Id ' + trxId + ' sudah ada di daftar.', false);
+  trip.items.push({ trxId, tglPb });
+  $('trxId').value = ''; $('tglPb').value = '';
+  saveDraft(); renderTrip(); toast('Struk ditambahkan (' + trip.items.length + ').');
+}
+function removeItem(i) {
+  if (!trip || saving) return;
+  const x = trip.items[i]; if (!x || !confirm('Hapus struk ' + x.trxId + ' dari daftar?')) return;
+  trip.items.splice(i, 1); saveDraft(); renderTrip();
+}
+async function uploadAll() {
+  if (!trip || saving) return;
+  if (ocrBusy) return toast('Tunggu pembacaan struk selesai.', false);
+  if (!trip.items.length) return toast('Belum ada struk di daftar.', false);
+  saving = true; const btn = $('uploadBtn'); btn.disabled = true; btn.textContent = 'Mengupload...';
   const t = trip;
   try {
-    const f = { id: t.id, waktu: t.waktu, kurir: t.kurir, plat: t.plat, trxId, tglPb };
-    let r = await api('simpanStruk', f, false);
-    if (r.duplicate) { if (!confirm(r.message)) return; r = await api('simpanStruk', f, true); }
-    if (!r.success) return toast(r.message, false, 5000);
-    t.id = r.id; t.items.push({ trxId, tglPb }); total++;
-    $('trxId').value = ''; $('tglPb').value = '';
-    renderTrip(); toast(r.message);
+    const f = { waktu: t.waktu, kurir: t.kurir, plat: t.plat, items: t.items };
+    let r = await api('simpanBatch', f, false);
+    if (r.duplicate) { if (!confirm(r.message)) return; r = await api('simpanBatch', f, true); }
+    if (!r.success) return toast(r.message, false, 6000);
+    total += r.count;
+    resetTrip(); $('counter').textContent = total + ' struk';
+    toast(r.message, true, 5000);
   } catch (e) { toast(e.message || e, false, 6000); }
-  finally { saving = false; btn.disabled = false; btn.textContent = 'Simpan Struk'; }
+  finally { saving = false; if (trip) renderTrip(); }
 }
-$('tglPb').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveStruk(); } });
+$('tglPb').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addStruk(); } });
 
 /* ekstraksi Trx Id & Tgl.PB dari teks hasil OCR (toleran terhadap salah baca O/0, I/l/1) */
 function extractStruk(raw) {
@@ -446,8 +490,8 @@ async function snap() {
     $('trxId').value = r.trx; $('tglPb').value = r.tgl;
     beep();
     const both = r.trx && r.tgl;
-    toast(both ? (r.guess ? 'Terbaca, label Tgl.PB tidak jelas: periksa tanggal.' : 'Struk terbaca. Periksa lalu simpan.') : 'Sebagian terbaca, lengkapi secara manual.', !!both && !r.guess, 4500);
-    if (both && !r.guess && $('autoSave').checked) saveStruk(); else (r.trx ? $('tglPb') : $('trxId')).focus();
+    toast(both ? (r.guess ? 'Terbaca, label Tgl.PB tidak jelas: periksa tanggal.' : 'Struk terbaca. Periksa lalu tambahkan.') : 'Sebagian terbaca, lengkapi secara manual.', !!both && !r.guess, 4500);
+    if (both && !r.guess && $('autoSave').checked) addStruk(); else (r.trx ? $('tglPb') : $('trxId')).focus();
   } catch (e) { toast(e.message || 'Gagal membaca struk.', false, 6000); }
   finally { ocrBusy = false; c.width = c.height = 0; setInfo(''); $('camBtn').disabled = false; }   // hapus gambar dari memori
 }
