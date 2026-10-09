@@ -37,36 +37,18 @@
     <div class="flex items-center gap-2 flex-wrap justify-end">
       <span id="counter" class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded font-semibold">0 struk</span>
       <span id="loggedUser" class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded"></span>
-      <button id="adminBtn" onclick="toggleAdmin()" class="hidden text-xs bg-purple-600 text-white px-2 py-1 rounded">Kelola Data</button>
+      <button id="adminBtn" onclick="toggleAdmin()" class="hidden text-xs bg-purple-600 text-white px-2 py-1 rounded">Kelola User</button>
       <button onclick="location.reload()" class="text-xs text-gray-500 underline">Keluar</button>
     </div>
   </div>
 
-  <div id="adminPanel" class="hidden space-y-4">
-    <div class="flex gap-2">
-      <button id="tb_user" onclick="showTab('user')">User</button>
-      <button id="tb_kurir" onclick="showTab('kurir')">Kurir</button>
-      <button id="tb_kend" onclick="showTab('kend')">Kendaraan</button>
-    </div>
-    <div id="tab_user" class="space-y-3">
-      <input id="aUser" autocapitalize="none" placeholder="Username" class="w-full p-3 border rounded-lg">
-      <input id="aPass" placeholder="Password" class="w-full p-3 border rounded-lg">
-      <input id="aNama" placeholder="Nama (opsional)" class="w-full p-3 border rounded-lg">
-      <button onclick="tambahUserBaru()" class="w-full bg-purple-600 text-white p-3 rounded-lg font-semibold">Tambah User</button>
-      <div id="userList"></div>
-    </div>
-    <div id="tab_kurir" class="hidden space-y-3">
-      <input id="kNama" placeholder="Nama kurir" class="w-full p-3 border rounded-lg">
-      <button onclick="tambahKurir()" class="w-full bg-purple-600 text-white p-3 rounded-lg font-semibold">Tambah Kurir</button>
-      <div id="kurirList"></div>
-    </div>
-    <div id="tab_kend" class="hidden space-y-3">
-      <input id="vPlat" placeholder="Plat (contoh: DB 1234 KZ)" autocapitalize="characters" class="w-full p-3 border rounded-lg uppercase">
-      <input id="vJenis" list="jenisList" placeholder="Jenis kendaraan (Motor, Pickup, ...)" class="w-full p-3 border rounded-lg">
-      <datalist id="jenisList"></datalist>
-      <button onclick="tambahKendaraan()" class="w-full bg-purple-600 text-white p-3 rounded-lg font-semibold">Tambah Kendaraan</button>
-      <div id="kendList"></div>
-    </div>
+  <div id="adminPanel" class="hidden space-y-3">
+    <div class="text-sm font-semibold text-gray-700">Kelola User</div>
+    <input id="aUser" autocapitalize="none" placeholder="Username" class="w-full p-3 border rounded-lg">
+    <input id="aPass" placeholder="Password" class="w-full p-3 border rounded-lg">
+    <input id="aNama" placeholder="Nama (opsional)" class="w-full p-3 border rounded-lg">
+    <button onclick="tambahUserBaru()" class="w-full bg-purple-600 text-white p-3 rounded-lg font-semibold">Tambah User</button>
+    <div id="userList"></div>
   </div>
 
   <div id="flow" class="space-y-4">
@@ -151,6 +133,16 @@
 // ====== GANTI dengan URL Web App Apps Script Anda (yang berakhiran /exec) ======
 const API_URL = 'https://script.google.com/macros/s/AKfycbynqfYzNe2J_oeLq2M9IAzjm6IPsZt5Ff84clIzkunXNN8WtT81fPBO3ApJEus3n1aK1Q/exec';
 
+// ====== DAFTAR KURIR & KENDARAAN (edit di sini; tidak membaca Google Drive sehingga langsung muncul) ======
+const KURIR = [
+  'Kurir A',
+  'Kurir B',
+];
+const KENDARAAN = [                     // plat + jenis kendaraan
+  { plat: 'DB 1234 KZ', jenis: 'Box' },
+  { plat: 'DB 5678 AB', jenis: 'Pickup' },
+];
+
 // Pengganti google.script.run supaya bisa jalan dari GitHub Pages
 const google = { script: { get run() { return makeRunner(); } } };
 function makeRunner(ok = () => {}, fail = () => {}) {
@@ -173,7 +165,7 @@ function makeRunner(ok = () => {}, fail = () => {}) {
   const set = (t, c) => { el.textContent = t; el.className = 'text-xs text-center ' + c; };
   if (API_URL.indexOf('script.google.com') < 0) return set('⚠ API_URL di index.html belum diisi URL /exec', 'text-red-600');
   fetch(API_URL).then(r => r.text()).then(t => {
-    const j = JSON.parse(t), ok = Number(j.versi) >= 6;
+    const j = JSON.parse(t), ok = Number(j.versi) >= 7;
     set('● Server terhubung ' + (j.versi ? '(kode v' + j.versi + ')' : '') + (ok ? '' : ' - kode LAMA: deploy ulang dengan New version'), ok ? 'text-green-600' : 'text-amber-600');
   }).catch(() => set('⚠ Server tidak terhubung. Cek URL /exec dan deployment (akses: Anyone).', 'text-red-600'));
 })();
@@ -209,7 +201,7 @@ function handleLogin() {
       $('loginSection').classList.add('hidden'); $('appSection').classList.remove('hidden');
       $('loggedUser').textContent = res.user;
       if (role === 'admin') $('adminBtn').classList.remove('hidden');
-      loadMaster(true);
+      initMaster();
     })
     .withFailureHandler(err => { btn.disabled = false; btn.textContent = 'Masuk'; $('loginMsg').textContent = 'Error: ' + (err.message || err); })
     .verifyLogin(u, p);
@@ -232,8 +224,12 @@ function kirimPermintaan() {
     .kirimPermintaan(d);
 }
 
-/* data master */
-let M = { kurir: [], kendaraan: [] };
+/* data master (dari konstanta KURIR & KENDARAAN di atas) */
+const norm = s => String(s || '').toUpperCase().replace(/\s+/g, ' ').trim();
+const M = {
+  kurir: [...new Set(KURIR.map(k => String(k).trim()).filter(Boolean))],
+  kendaraan: KENDARAAN.map(k => ({ plat: norm(k.plat), jenis: String(k.jenis || '').trim() })).filter(k => k.plat && k.jenis)
+};
 const key = s => String(s || '').toUpperCase().replace(/\s+/g, '');
 const findPlat = v => M.kendaraan.find(x => key(x.plat) === key(v));
 
@@ -241,19 +237,12 @@ function setOptions(id, items, keep) {
   const s = $(id); s.length = 1; items.forEach(o => s.add(new Option(o.t, o.v)));
   if (keep && items.some(o => o.v === keep)) s.value = keep;
 }
-function loadMaster(init) {
-  run().withSuccessHandler(d => {
-    M = d; renderMaster();
-    if (init) { waktuManual = false; $('waktu').value = waktuNow(); restoreDraft(); }
-  }).getMasterData(U, P);
-}
-function renderMaster() {
-  const jenis = [...new Set(M.kendaraan.map(k => k.jenis))];
-  setOptions('kurir', M.kurir.map(n => ({ v: n, t: n })), $('kurir').value || load('kurir'));
-  setOptions('kendaraan', M.kendaraan.slice().sort((a, b) => a.plat.localeCompare(b.plat)).map(k => ({ v: k.plat, t: k.plat + ' - ' + k.jenis })), $('kendaraan').value || load('plat'));
-  $('jenisList').innerHTML = jenis.map(j => '<option value="' + j.replace(/"/g, '&quot;') + '">').join('');
-  renderAdminMaster();
-  if (!M.kurir.length || !M.kendaraan.length) toast('Data kurir/kendaraan belum diisi. Hubungi admin.', false, 8000);
+function initMaster() {
+  setOptions('kurir', M.kurir.map(n => ({ v: n, t: n })), load('kurir'));
+  setOptions('kendaraan', M.kendaraan.slice().sort((a, b) => a.plat.localeCompare(b.plat)).map(k => ({ v: k.plat, t: k.plat + ' - ' + k.jenis })), load('plat'));
+  waktuManual = false; $('waktu').value = waktuNow();
+  if (!M.kurir.length || !M.kendaraan.length) toast('Daftar kurir/kendaraan di index.html masih kosong.', false, 8000);
+  restoreDraft();
 }
 
 /* waktu otomatis: Pagi 05.00-10.59, Siang 11.00-17.59, Malam 18.00-04.59 */
@@ -353,7 +342,7 @@ async function uploadAll() {
   saving = true; const btn = $('uploadBtn'); btn.disabled = true; btn.textContent = 'Mengupload...';
   const t = trip;
   try {
-    const f = { waktu: t.waktu, kurir: t.kurir, plat: t.plat, items: t.items };
+    const f = { waktu: t.waktu, kurir: t.kurir, plat: t.plat, jenis: t.jenis, items: t.items };
     let r = await api('simpanBatch', f, false);
     if (r.duplicate) { if (!confirm(r.message)) return; r = await api('simpanBatch', f, true); }
     if (!r.success) return toast(r.message, false, 6000);
@@ -496,18 +485,12 @@ async function snap() {
   finally { ocrBusy = false; c.width = c.height = 0; setInfo(''); $('camBtn').disabled = false; }   // hapus gambar dari memori
 }
 
-/* kelola data (main user) */
+/* kelola user (main user) */
 function toggleAdmin() {
   const open = $('adminPanel').classList.contains('hidden');
   $('adminPanel').classList.toggle('hidden', !open); $('flow').classList.toggle('hidden', open);
-  $('adminBtn').textContent = open ? 'Kembali ke Form' : 'Kelola Data';
-  if (open) { showTab('user'); loadUsers(); }
-}
-function showTab(t) {
-  ['user', 'kurir', 'kend'].forEach(x => {
-    $('tab_' + x).classList.toggle('hidden', x !== t);
-    $('tb_' + x).className = 'flex-1 py-2 text-sm rounded ' + (x === t ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-700');
-  });
+  $('adminBtn').textContent = open ? 'Kembali ke Form' : 'Kelola User';
+  if (open) loadUsers();
 }
 function renderList(id, items, text, del) {
   const box = $(id); box.innerHTML = '';
@@ -524,7 +507,7 @@ function renderList(id, items, text, del) {
   });
 }
 function act(fn, args, after) {
-  run().withSuccessHandler(r => { toast(r.message, r.success); if (r.success) { if (after) after(); fn.indexOf('User') >= 0 || fn === 'adminAdd' || fn === 'adminDelete' ? loadUsers() : loadMaster(); } })[fn](U, P, ...args);
+  run().withSuccessHandler(r => { toast(r.message, r.success); if (r.success) { if (after) after(); loadUsers(); } })[fn](U, P, ...args);
 }
 function loadUsers() {
   run().withSuccessHandler(list => renderList('userList', list.map(u => ({ ...u, locked: u.role === 'admin' })),
@@ -534,12 +517,6 @@ function loadUsers() {
 }
 function tambahUserBaru() {
   act('adminAdd', [{ username: $('aUser').value, password: $('aPass').value, nama: $('aNama').value }], () => ['aUser', 'aPass', 'aNama'].forEach(i => $(i).value = ''));
-}
-function tambahKurir() { act('adminAddKurir', [$('kNama').value], () => $('kNama').value = ''); }
-function tambahKendaraan() { act('adminAddKendaraan', [$('vPlat').value, $('vJenis').value], () => { $('vPlat').value = ''; }); }
-function renderAdminMaster() {
-  renderList('kurirList', M.kurir.map(n => ({ n })), x => x.n, x => confirm('Hapus kurir "' + x.n + '"?') && act('adminDeleteKurir', [x.n]));
-  renderList('kendList', M.kendaraan, x => x.plat + ' - ' + x.jenis, x => confirm('Hapus kendaraan ' + x.plat + '?') && act('adminDeleteKendaraan', [x.plat]));
 }
 </script>
 </body>
