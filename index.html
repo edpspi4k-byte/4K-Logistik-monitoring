@@ -135,8 +135,8 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbynqfYzNe2J_oeLq2M9IAzj
 
 // ====== DAFTAR KURIR & KENDARAAN (edit di sini; tidak membaca Google Drive sehingga langsung muncul) ======
 const KURIR = [
-  'Kurir A',
-  'Kurir B',
+  'Nama Kurir 1',
+  'Nama Kurir 2',
 ];
 const KENDARAAN = [                     // plat + jenis kendaraan
   { plat: 'DB 1234 KZ', jenis: 'Box' },
@@ -165,7 +165,7 @@ function makeRunner(ok = () => {}, fail = () => {}) {
   const set = (t, c) => { el.textContent = t; el.className = 'text-xs text-center ' + c; };
   if (API_URL.indexOf('script.google.com') < 0) return set('⚠ API_URL di index.html belum diisi URL /exec', 'text-red-600');
   fetch(API_URL).then(r => r.text()).then(t => {
-    const j = JSON.parse(t), ok = Number(j.versi) >= 7;
+    const j = JSON.parse(t), ok = Number(j.versi) >= 8;
     set('● Server terhubung ' + (j.versi ? '(kode v' + j.versi + ')' : '') + (ok ? '' : ' - kode LAMA: deploy ulang dengan New version'), ok ? 'text-green-600' : 'text-amber-600');
   }).catch(() => set('⚠ Server tidak terhubung. Cek URL /exec dan deployment (akses: Anyone).', 'text-red-600'));
 })();
@@ -276,7 +276,7 @@ function resetTrip() {
   $('trxId').value = ''; $('tglPb').value = ''; $('qrList').innerHTML = '';
 }
 function newTrip() {
-  if (saving || ocrBusy) return toast('Tunggu proses selesai.', false);
+  if (saving || ocrBusy || checking) return toast('Tunggu proses selesai.', false);
   if (trip && trip.items.length && !confirm('Ada ' + trip.items.length + ' struk yang belum diupload. Buang semuanya dan mulai pengantaran baru?')) return;
   resetTrip();
 }
@@ -318,17 +318,29 @@ function tglOk(s) {
   return d >= 1 && d <= 31 && mo >= 1 && mo <= 12 && h < 24 && mi < 60 && se < 60;
 }
 
-function addStruk() {
-  if (!trip) return;
+let checking = false;
+async function addStruk() {
+  if (!trip || checking) return;
   if (saving) return toast('Tunggu upload selesai.', false);
   const trxId = $('trxId').value.trim().toUpperCase().replace(/\s+/g, ''), tglPb = $('tglPb').value.trim().replace(/\s+/g, ' ');
   if (!trxId) return toast('Trx Id belum diisi.', false);
   if (!/^[A-Z0-9._\/-]{3,40}$/.test(trxId)) return toast('Trx Id tidak valid (huruf/angka, 3-40 karakter).', false, 4000);
   if (!tglOk(tglPb)) return toast('Tgl.PB harus berformat DD-MM-YYYY HH:mm:ss.', false, 4000);
   if (trip.items.some(x => x.trxId === trxId)) return toast('Trx Id ' + trxId + ' sudah ada di daftar.', false);
-  trip.items.push({ trxId, tglPb });
+  checking = true; const btn = $('addBtn'); btn.disabled = true; btn.textContent = 'Memeriksa...';
+  const t = trip; let warn = '';
+  try {
+    const r = await api('cekTrx', trxId);          // Trx Id yang sudah terupload di transaksi lain tidak boleh diinput lagi
+    if (r.found) {
+      $('trxId').value = ''; $('tglPb').value = '';
+      return toast('Ditolak: Trx Id ' + trxId + ' sudah pernah terupload (ID ' + r.id + ').', false, 6000);
+    }
+  } catch (e) { warn = ' Pemeriksaan server gagal, akan diperiksa lagi saat upload.'; }
+  finally { checking = false; btn.disabled = false; btn.textContent = '+ Tambah Struk'; }
+  if (trip !== t || t.items.some(x => x.trxId === trxId)) return;
+  t.items.push({ trxId, tglPb });
   $('trxId').value = ''; $('tglPb').value = '';
-  saveDraft(); renderTrip(); toast('Struk ditambahkan (' + trip.items.length + ').');
+  saveDraft(); renderTrip(); toast('Struk ditambahkan (' + t.items.length + ').' + warn, !warn, warn ? 5000 : 2500);
 }
 function removeItem(i) {
   if (!trip || saving) return;
@@ -336,15 +348,19 @@ function removeItem(i) {
   trip.items.splice(i, 1); saveDraft(); renderTrip();
 }
 async function uploadAll() {
-  if (!trip || saving) return;
+  if (!trip || saving || checking) return;
   if (ocrBusy) return toast('Tunggu pembacaan struk selesai.', false);
   if (!trip.items.length) return toast('Belum ada struk di daftar.', false);
   saving = true; const btn = $('uploadBtn'); btn.disabled = true; btn.textContent = 'Mengupload...';
   const t = trip;
   try {
     const f = { waktu: t.waktu, kurir: t.kurir, plat: t.plat, jenis: t.jenis, items: t.items };
-    let r = await api('simpanBatch', f, false);
-    if (r.duplicate) { if (!confirm(r.message)) return; r = await api('simpanBatch', f, true); }
+    const r = await api('simpanBatch', f);
+    if (r.duplicate) {                              // buang struk yang sudah pernah terupload dari daftar, sisanya bisa diupload lagi
+      const bad = new Set(r.dups || []); t.items = t.items.filter(x => !bad.has(x.trxId));
+      saveDraft(); renderTrip();
+      return toast(r.message + ' Struk tersebut dihapus dari daftar, tekan Upload lagi untuk sisanya.', false, 9000);
+    }
     if (!r.success) return toast(r.message, false, 6000);
     total += r.count;
     resetTrip(); $('counter').textContent = total + ' struk';
