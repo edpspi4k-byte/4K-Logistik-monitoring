@@ -99,6 +99,10 @@
         <div class="flex justify-between text-sm font-medium text-gray-700 mb-1"><span>Daftar struk (belum diupload)</span><span id="tripCount">0 struk</span></div>
         <div id="qrList" class="space-y-1 max-h-56 overflow-y-auto"></div>
       </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700">Deskripsi pengantaran <span class="text-gray-400 font-normal">(opsional)</span></label>
+        <textarea id="deskripsi" rows="2" maxlength="200" placeholder="Catatan untuk pengantaran ini, mis. tujuan atau kondisi barang" class="w-full mt-1 p-3 border rounded-lg text-sm"></textarea>
+      </div>
       <button id="uploadBtn" onclick="uploadAll()" class="w-full bg-green-600 text-white p-3 rounded-lg font-semibold disabled:opacity-50" disabled>Upload Semua</button>
       <p class="text-xs text-gray-500">Struk disimpan sementara di perangkat ini dan baru dikirim ke Google Sheet saat tombol Upload Semua ditekan.</p>
     </div>
@@ -165,7 +169,7 @@ function makeRunner(ok = () => {}, fail = () => {}) {
   const set = (t, c) => { el.textContent = t; el.className = 'text-xs text-center ' + c; };
   if (API_URL.indexOf('script.google.com') < 0) return set('⚠ API_URL di index.html belum diisi URL /exec', 'text-red-600');
   fetch(API_URL).then(r => r.text()).then(t => {
-    const j = JSON.parse(t), ok = Number(j.versi) >= 8;
+    const j = JSON.parse(t), ok = Number(j.versi) >= 9;
     set('● Server terhubung ' + (j.versi ? '(kode v' + j.versi + ')' : '') + (ok ? '' : ' - kode LAMA: deploy ulang dengan New version'), ok ? 'text-green-600' : 'text-amber-600');
   }).catch(() => set('⚠ Server tidak terhubung. Cek URL /exec dan deployment (akses: Anyone).', 'text-red-600'));
 })();
@@ -259,13 +263,14 @@ function startTrip() {
   if (!m) return toast('Pilih kendaraan dulu.', false);
   if (!waktuManual) $('waktu').value = waktuNow();
   store('kurir', kurir); store('plat', m.plat);
-  enterTrip({ kurir, plat: m.plat, jenis: m.jenis, waktu: $('waktu').value, items: [] });
+  enterTrip({ kurir, plat: m.plat, jenis: m.jenis, waktu: $('waktu').value, deskripsi: '', items: [] });
 }
 function enterTrip(t) {
   trip = t;
   ['kurir', 'kendaraan', 'waktu'].forEach(i => $(i).disabled = true);
   $('startBtn').classList.add('hidden'); $('stepQR').classList.remove('hidden');
   $('tripInfo').textContent = t.kurir + ' • ' + t.plat + ' (' + t.jenis + ') • ' + t.waktu;
+  $('deskripsi').value = t.deskripsi || '';
   renderTrip();
 }
 function resetTrip() {
@@ -273,7 +278,7 @@ function resetTrip() {
   ['kurir', 'kendaraan', 'waktu'].forEach(i => $(i).disabled = false);
   if (!waktuManual) $('waktu').value = waktuNow();
   $('startBtn').classList.remove('hidden'); $('stepQR').classList.add('hidden');
-  $('trxId').value = ''; $('tglPb').value = ''; $('qrList').innerHTML = '';
+  $('trxId').value = ''; $('tglPb').value = ''; $('deskripsi').value = ''; $('qrList').innerHTML = '';
 }
 function newTrip() {
   if (saving || ocrBusy || checking) return toast('Tunggu proses selesai.', false);
@@ -307,7 +312,7 @@ function restoreDraft() {
   if (!items.length) return clearDraft();
   waktuManual = true;
   $('kurir').value = t.kurir; $('kendaraan').value = m.plat; $('waktu').value = t.waktu;
-  enterTrip({ kurir: t.kurir, plat: m.plat, jenis: m.jenis, waktu: t.waktu, items });
+  enterTrip({ kurir: t.kurir, plat: m.plat, jenis: m.jenis, waktu: t.waktu, deskripsi: String(t.deskripsi || '').slice(0, 200), items });
   toast('Draft dipulihkan: ' + items.length + ' struk belum diupload.', true, 5000);
 }
 
@@ -342,6 +347,7 @@ async function addStruk() {
   $('trxId').value = ''; $('tglPb').value = '';
   saveDraft(); renderTrip(); toast('Struk ditambahkan (' + t.items.length + ').' + warn, !warn, warn ? 5000 : 2500);
 }
+$('deskripsi').addEventListener('input', e => { if (trip) { trip.deskripsi = e.target.value; saveDraft(); } });
 function removeItem(i) {
   if (!trip || saving) return;
   const x = trip.items[i]; if (!x || !confirm('Hapus struk ' + x.trxId + ' dari daftar?')) return;
@@ -354,7 +360,7 @@ async function uploadAll() {
   saving = true; const btn = $('uploadBtn'); btn.disabled = true; btn.textContent = 'Mengupload...';
   const t = trip;
   try {
-    const f = { waktu: t.waktu, kurir: t.kurir, plat: t.plat, jenis: t.jenis, items: t.items };
+    const f = { waktu: t.waktu, kurir: t.kurir, plat: t.plat, jenis: t.jenis, deskripsi: t.deskripsi || '', items: t.items };
     const r = await api('simpanBatch', f);
     if (r.duplicate) {                              // buang struk yang sudah pernah terupload dari daftar, sisanya bisa diupload lagi
       const bad = new Set(r.dups || []); t.items = t.items.filter(x => !bad.has(x.trxId));
